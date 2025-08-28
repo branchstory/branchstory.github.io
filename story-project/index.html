@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分岐型物語 | ケンカのあと</title>
+    <!-- Tailwind CSSを読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts (Noto Sans JP & Noto Serif JP) を読み込み -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* 基本フォントをゴシック体に設定 */
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+        /* 導入部分のテキストを明朝体に設定 */
+        .font-serif-story {
+            font-family: 'Noto Serif JP', serif;
+        }
+        /* 改行を適切に表示するためのスタイル */
+        .story-text {
+            white-space: pre-wrap;
+        }
+        /* クリックを促すアイコンのアニメーション */
+        .blinking-cursor {
+            animation: blink 1.5s step-end infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        /* クリック可能なエリアのカーソル */
+        .clickable-area {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-stone-800 text-gray-800 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-2xl mx-auto flex flex-col items-center gap-6">
+        
+        <!-- キャラクター表示エリア (枠の外) -->
+        <div id="character-container">
+            <img src="キャラクター.jpg" alt="物語の案内人" class="w-32 h-auto rounded-lg shadow-lg border-2 border-stone-300">
+        </div>
+
+        <!-- メインのコンテンツボックス -->
+        <div id="content-box" class="w-full bg-amber-50 rounded-xl shadow-2xl p-6 md:p-10 transition-all duration-500 border-4 border-amber-200">
+            
+            <!-- 名前入力画面 -->
+            <div id="setup-container">
+                <div id="initial-prompt" class="relative clickable-area h-32 overflow-y-auto">
+                    <div class="flex flex-col items-center gap-4">
+                        <div class="flex-grow">
+                            <p id="narrator-text" class="mb-4 text-center leading-relaxed story-text font-serif-story text-stone-700"></p>
+                        </div>
+                    </div>
+                    <div id="narrator-continue-icon" class="absolute bottom-2 right-2 text-stone-600 blinking-cursor" style="display: none;">▼</div>
+                </div>
+                <div id="name-input-section" style="display: none;">
+                    <div class="mt-6">
+                        <label for="player-name-input" class="block mb-2 text-sm font-medium text-stone-800">あなたの名前</label>
+                        <input type="text" id="player-name-input" class="bg-white border border-stone-300 text-stone-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5" placeholder="例：たくや">
+                    </div>
+                    <button id="submit-name-button" class="w-full mt-4 bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-800 transition-colors duration-300 shadow-lg">名前を伝える</button>
+                </div>
+
+                <div id="confirmation-prompt" style="display: none;">
+                    <h1 class="text-2xl md:text-3xl font-bold mb-4 text-center text-stone-800 font-serif-story">承りました</h1>
+                    <p id="confirmation-text" class="mb-6 text-center leading-relaxed story-text font-serif-story text-stone-700"></p>
+                    <button id="start-button" class="w-full bg-green-700 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-800 transition-colors duration-300 shadow-lg">物語をはじめる</button>
+                </div>
+            </div>
+
+
+            <!-- 物語の本編画面 -->
+            <div id="main-container" style="display: none;">
+                <div class="mb-4 text-right">
+                    <p class="text-xs text-stone-500">あなたのID: <span id="user-id-display"></span></p>
+                </div>
+                
+                <div id="story-container" class="relative clickable-area h-32 overflow-y-auto">
+                    <h1 id="story-title" class="text-2xl md:text-3xl font-bold mb-6 text-center text-stone-800"></h1>
+                    <p id="story-text" class="text-base md:text-lg leading-relaxed story-text mb-8 text-stone-700"></p>
+                    <div id="story-continue-icon" class="absolute bottom-2 right-2 text-stone-600 blinking-cursor" style="display: none;">▼</div>
+                </div>
+
+                <div id="choices-container" class="grid grid-cols-1 gap-4 mt-4">
+                    <!-- 選択肢ボタンはJavaScriptによって動的に生成されます -->
+                </div>
+
+                <div id="controls-container" class="mt-8 text-center space-y-4">
+                     <button id="restart-button" class="bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-800 transition-colors duration-300" style="display: none;">最初からやり直す</button>
+                     <hr class="my-6 border-stone-300">
+                     <button id="export-csv-button" class="bg-green-700 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-800 transition-colors duration-300">集計データをCSVでダウンロード</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKの読み込み -->
+    <script type="module">
+        // Firebase SDKのコア機能とFirestoreをインポート
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // あなたのFirebaseプロジェクトの設定情報
+        const firebaseConfig = {
+            apiKey: "AIzaSyApGC17XTCCtN9DEhw5etgnBeov8UXp1O0", 
+            authDomain: "story-app-project-814a0.firebaseapp.com",
+            projectId: "story-app-project-814a0",
+            storageBucket: "story-app-project-814a0.appspot.com",
+            messagingSenderId: "384158048013",
+            appId: "1:384158048013:web:73c8fafb2318f763df9a44"
+        };
+
+        // Firebaseアプリを初期化
+        let app, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("Firebase initialized successfully.");
+        } catch (error) {
+            console.error("Firebaseの初期化に失敗しました。設定情報を確認してください。", error);
+            alert("データベースへの接続に失敗しました。設定を確認してください。");
+        }
+
+        // DOM要素を取得
+        const characterContainer = document.getElementById('character-container');
+        const setupContainer = document.getElementById('setup-container');
+        const mainContainer = document.getElementById('main-container');
+        const initialPrompt = document.getElementById('initial-prompt');
+        const narratorText = document.getElementById('narrator-text');
+        const narratorContinueIcon = document.getElementById('narrator-continue-icon');
+        const nameInputSection = document.getElementById('name-input-section');
+        const confirmationPrompt = document.getElementById('confirmation-prompt');
+        const playerNameInput = document.getElementById('player-name-input');
+        const submitNameButton = document.getElementById('submit-name-button');
+        const confirmationText = document.getElementById('confirmation-text');
+        const startButton = document.getElementById('start-button');
+        
+        const storyContainer = document.getElementById('story-container');
+        const storyTitleElement = document.getElementById('story-title');
+        const storyTextElement = document.getElementById('story-text');
+        const storyContinueIcon = document.getElementById('story-continue-icon');
+        const choicesContainer = document.getElementById('choices-container');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const restartButton = document.getElementById('restart-button');
+        const exportCsvButton = document.getElementById('export-csv-button');
+
+        // =================================================================================
+        // 物語のデータ (テキストを配列に変更)
+        // =================================================================================
+        const narratorLines = [
+            "ようこそおいでくださいました。新たなる物語の紡ぎ手…とお呼びすべきでしょうか。",
+            "お待ちしておりました。私が紹介するのは、まだ誰も知らない物語です。",
+            "貴方様がその一歩を踏み出すことで、止まっていた時間は動き出し、登場人物たちは息を吹き返すのでございます。",
+            "さあ、物語の最初のページをめくる前に、貴方様の名前を、この私に教えてはいただけませんか？"
+        ];
+        
+        const storyData = {
+            '1': {
+                title: '【1】ケンカのあと',
+                text: [
+                    '今日は最悪な一日だった。',
+                    '朝からちょっとイライラしていて、教室でもゆうたと些細なことで言い合いになった。最初は冗談のつもりだったけど、気づいたらお互いにカッとなって、大きな声を出してしまった。',
+                    '「もういいよ！」',
+                    '「おまえなんか知らねーし！」',
+                    '最後に吐いたその言葉が、ずっと頭の中でぐるぐる回っている。',
+                    '放課後の帰り道。ランドセルがやけに重く感じる。足取りも重い。',
+                    '明日、学校で顔を合わせるのがちょっと怖い。でも、謝るのもなんか悔しい。',
+                    '自分が悪かったのかな？それとも、ゆうたが言いすぎたのかな？そんな考えが頭をぐちゃぐちゃにする。',
+                    '今日はどうしようかな？'
+                ],
+                choices: [
+                    { text: 'A：近くの公園で少し休もう', nextScene: '2' },
+                    { text: 'B：まっすぐ家に帰ろう', nextScene: '3' },
+                    { text: 'C：思い切ってゆうたの家に行ってみよう', nextScene: '4' }
+                ]
+            },
+            '2': {
+                title: '【2】公園で考える',
+                text: [
+                    'ブランコの鎖が音を立てる。\n夕方の公園にはもう誰もいなくて、風が吹くたびに葉っぱが舞っている。',
+                    '一人で座っていると、今日のことがどんどん頭に浮かんでくる。',
+                    'ゆうたと初めてケンカしたのは今日かもしれない。今までは、どんなに意見が違っても、すぐに笑って終わってたのに。今日は違った。',
+                    'なんで、あんなことを言ってしまったんだろう？ゆうたも、あんなに怒ってたけど、ほんとはどんな気持ちだったんだろう？',
+                    'ポケットの中でスマホを握りしめたまま、何も打てずに画面を消す。\n連絡する勇気が出ない。',
+                    'そんなとき、後ろから足音が聞こえた。見れば、同じクラスのまさとが通りかかった。',
+                    '「{{playerName}}、なにしてんの、こんなとこで？」',
+                    'まさとが声をかけてくる。'
+                ],
+                choices: [
+                    { text: 'A1：まさとにケンカのことを話してみる', nextScene: '5' },
+                    { text: 'A2：ううん、なんでもないって言って一人で考え続ける', nextScene: '6' }
+                ]
+            },
+            '3': {
+                title: '【3】家に帰る',
+                text: ['玄関のドアを開けると、お母さんの「おかえり」の声が聞こえた。だけど、返事をする気になれなくて、そのまま靴を脱いで部屋に向かう。\n\nランドセルを置いて、ベッドに顔をうずめた。\n心の中がぐちゃぐちゃしている。ゆうたの顔が、何度も思い浮かぶ。\n「なんであんなこと言っちゃったんだろう…」\nでも、「ゆうたも言いすぎたよな」とも思う。気持ちが堂々巡りして、目が熱くなってきた。\n\nそのとき、トントンとドアをノックする音。\n「{{playerName}}、なにかあったの？」とお母さんの声。\n少し考えて、ドアを開ける。'],
+                choices: [ { text: 'B1：正直にお母さんに相談してみる', nextScene: '7' }, { text: 'B2：なんでもないと答えて、ひとりで抱え込む', nextScene: '6' }]
+            },
+            '4': {
+                title: '【4】ゆうたの家に行く',
+                text: ['学校の帰り道をちょっとだけ遠回りして、ゆうたの家の前に来た。\n胸の奥がドキドキしてる。玄関のチャイムを押すかどうか、迷ったまましばらく立ち止まった。\n\n――ピンポーン。\n\n押してしまった。ドアの向こうからゆうたのお母さんの声がして、少ししてからゆうたが出てきた。\n玄関先に出てきたゆうたは、ちょっと驚いた顔をして、でもすぐに目をそらした。\n\n「……なに？」\n短くそう言われて、言葉に詰まる。'],
+                choices: [ { text: 'C1：「話したかったんだ」と、正直に気持ちを伝える', nextScene: '8' }, { text: 'C2：「べつに……」と、つい素っ気なくしてしまう', nextScene: '9' }]
+            },
+            '5': {
+                title: '【5】友達に話す',
+                text: ['「なにしてんの？」と声をかけてきたのは、クラスメイトのまさと。\n「{{playerName}}、ちょっとだけ…」と言いかけて、気づけば口が勝手に動いていた。\n\n「ゆうたと、ケンカしちゃってさ」\nまさとは驚いた顔をしたあと、ブランコのとなりに腰をおろした。\n\n「マジか。でも、あいつも怒るとすぐムキになるしなぁ。でも、{{playerName}}もわりとガンコだよな」\n「……たしかに」\nちょっとだけ笑いがこみあげてくる。誰かに話したら、少しだけ気持ちが軽くなった。\n\n「謝っとけば？たぶん、ゆうたも待ってんじゃね？」\nまさとの言葉が胸に刺さる。'],
+                choices: [ { text: 'A1a：よし、ゆうたに謝りに行こう', nextScene: '10' }, { text: 'A1b：もう少しだけ自分の気持ちを整理してみたい', nextScene: '6' }]
+            },
+            '6': {
+                title: '【6】一人で考える／何もしない',
+                text: ['誰にも言えないまま、夕方が夜に変わる。\nスマホの通知はゼロのまま。自分から動かないと、何も変わらないのかもしれない。\n\n部屋の明かりをつけたまま、机に突っ伏して考える。\n「あのとき、ゆうたがこう言ったから、ぼくも……」\n言い訳ばっかりが頭の中に浮かんできて、どれも本当の気持ちとは違う気がしてきた。\n\n気づけば、ノートのすみっこに「ごめん」と書いていた。\n\nでも、どうすればいいのか――その一歩が、踏み出せない。'],
+                choices: [ { text: 'A2a/B2a：このまま何もせず、ゆうたとの距離が開いてしまう', nextScene: 'H' }, { text: 'A2b/B2b：先生に相談してみようと思い立つ', nextScene: '11' }]
+            },
+            '7': {
+                title: '【7】お母さんに相談',
+                text: ['「今日さ、ゆうたとケンカしちゃって…」\n少し迷ったあと、ポツリとこぼした言葉。お母さんは、黙ってうなずきながら聞いてくれた。\n\n「そっか、{{playerName}}。ゆうたくんは、仲のいいお友達だったよね」\nお母さんの声は、いつもより少し優しくて、それが逆に胸にしみた。\n\n「ちゃんと話せば、きっとわかってくれると思うよ。でも、面と向かって話すのが難しいときは、手紙とかでも気持ちは伝わるよ」\nお母さんが、紙とペンを差し出してきた。\n\n少しだけ迷ったけど、ゆっくりペンを持った。'],
+                choices: [ { text: 'B1a：手紙を書いて、明日ゆうたに渡そうと決める', nextScene: '12' }, { text: 'B1b：やっぱり書くのをやめてしまう', nextScene: '6' }]
+            },
+             '8': {
+                title: '【8】ゆうたに正直に話す',
+                text: ['「話したかったんだ…」\nそれだけ言うのに、こんなに勇気がいるなんて思わなかった。\n\nゆうたはちょっと驚いた顔をして、それから俯いた。\n「……俺も、言いすぎたかも」\n静かにそうつぶやくゆうたに、胸のつかえが少し溶けていく。\n\nそのまま、二人でしばらく玄関先に立ち尽くしていた。\n話す言葉は少なかったけど、心がすこし近づいた気がした。'],
+                choices: [ { text: 'C1a：自然とお互い笑い合って仲直りできた', nextScene: 'A' }, { text: 'C1b：話せたけど、まだ少しモヤモヤが残った', nextScene: 'I' }]
+            },
+            '9': {
+                title: '【9】そっけなくしてしまう',
+                text: ['「べつに…通りかかっただけ」\n気まずさからついそう言ってしまう。\n\nゆうたは一瞬ムッとしたような顔をして、\n「ふーん、じゃあ、なんか用ないんだ」\nと言って、ドアを閉めかけた。\n\nああ、しまった…。本当は謝りたかったのに、素直に言えなかった。\nでも、閉まりかけたドアの向こうから、ゆうたの声がした。\n\n「……また、学校でな」'],
+                choices: [ { text: 'C2a：それを聞いてほっとする', nextScene: 'G' }, { text: 'C2b：何も言えず、関係がぎくしゃくしたまま終わる', nextScene: 'H' }]
+            },
+            '10': {
+                title: '【10】謝りに行く',
+                text: ['まさとの言葉に背中を押されて、ゆうたの家の前に立つ。\n今度こそ、自分の気持ちをちゃんと伝えよう。チャイムを押す手が震える。\n\n玄関を開けたゆうたに、はっきり言う。\n「ごめん。あの時、言いすぎた。ほんとは後悔してる」\nしばらく沈黙のあと、ゆうたが目を伏せながら言った。\n\n「……俺も、ごめん」\n二人は小さな声で笑い合った。'],
+                choices: [ { text: 'そのまま素直に仲直りできた', nextScene: 'A' }, { text: 'ゆうたがまだ怒っていて許してくれなかった', nextScene: 'B' }]
+            },
+            '11': {
+                title: '【11】先生に相談',
+                text: ['次の日の朝、教室に入るのが少し怖かった。\nでも、勇気を出して先生に相談してみると、先生は驚かずに静かに話を聞いてくれた。\n\n「気持ちを伝えたいと思ってる、それだけでもすごく大事なことだよ」\n先生は、さりげなくゆうたにも声をかけてくれたらしい。\n\n昼休み、ゆうたがちょっとだけ目を合わせてきた。無言だったけど、昨日よりは気まずくなかった。'],
+                choices: [ { text: '少しずつ話せるようになっていった', nextScene: 'J' }, { text: '結局、自分から話しかけられなかった', nextScene: 'H' }]
+            },
+            '12': {
+                title: '【12】手紙を書く',
+                text: ['紙に「ごめんね」と書いたあと、言葉が止まる。\n何を書けばちゃんと伝わるだろう？たくさん考えて、何度も書き直して、ようやく完成した。\n\n次の日、ゆうたの机にそっと手紙を入れた。\n授業中、ゆうたがその手紙を読んでいるのが見えた気がする。放課後、後ろから声をかけられた。\n\n「……手紙、ありがとう」'],
+                choices: [ { text: 'ゆうたが笑ってくれて仲直りできた', nextScene: 'C' }, { text: 'ゆうたが特に反応せず、手紙の返事もなかった', nextScene: 'D' }]
+            },
+            // --- エンディング ---
+            'A': { title: '【エンディングA】自然な仲直り', text: ['ふたりとも素直になって、お互いに謝ることができた。明日からまた、いつも通り一緒に笑えるね。'], choices: [] },
+            'B': { title: '【エンディングB】仲直り未遂', text: ['謝ったけれど、ゆうたはまだ怒っていた。もう少し時間が必要かもしれない。'], choices: [] },
+            'C': { title: '【エンディングC】文字でつながる', text: ['手紙で気持ちを伝えられた。言葉にできない想いも、文字なら届くと信じてる。'], choices: [] },
+            'D': { title: '【エンディングD】届かなかった想い', text: ['手紙は渡した。でも、それがゆうたに届いたかどうか、わからないまま終わった。'], choices: [] },
+            'G': { title: '【エンディングG】あいまいな仲直り', text: ['ハッキリとは仲直りしなかったけど、また普通に話せるようになってきた。少しずつ距離を縮めていこう。'], choices: [] },
+            'H': { title: '【エンディングH】疎遠になってしまう', text: ['結局、何もできないまま時間だけが過ぎていった。今はまだ、話しかける勇気がない。'], choices: [] },
+            'I': { title: '【エンディングI】気まずいまま', text: ['話すことはできたけど、まだ心のどこかで引っかってる。すっきりするには、もう少し時間が必要かも。'], choices: [] },
+            'J': { title: '【エンディングJ】先生の助けで仲直り', text: ['自分だけじゃ難しかったけど、先生の力を借りて、少しずつ関係を取り戻せた。頼るって、大事なことなんだ。'], choices: [] }
+        };
+
+        // ユーザーを識別するための一意のIDを管理
+        let userId = localStorage.getItem('branchingStoryUserId');
+        if (!userId) {
+            userId = crypto.randomUUID();
+            localStorage.setItem('branchingStoryUserId', userId);
+        }
+        userIdDisplay.textContent = userId;
+
+        // テキスト送りの状態を管理
+        let currentSceneId = '1';
+        let currentTextIndex = 0;
+        let narratorTextIndex = 0;
+
+        // テキストを1文字ずつ表示する関数
+        function typeWriter(element, text, onComplete) {
+            let i = 0;
+            element.innerHTML = ""; // 表示をリセット
+            function type() {
+                if (i < text.length) {
+                    element.innerHTML += text.charAt(i);
+                    i++;
+                    setTimeout(type, 50); // 50ミリ秒ごとに1文字表示
+                } else if (onComplete) {
+                    onComplete();
+                }
+            }
+            type();
+        }
+
+        // 案内人のセリフを表示する関数
+        function showNarratorText() {
+            if (narratorTextIndex < narratorLines.length) {
+                narratorContinueIcon.style.display = 'none';
+                typeWriter(narratorText, narratorLines[narratorTextIndex], () => {
+                    narratorContinueIcon.style.display = 'block';
+                });
+            } else {
+                // 全てのセリフが終わったら入力欄を表示
+                narratorContinueIcon.style.display = 'none';
+                nameInputSection.style.display = 'block';
+            }
+        }
+
+        // 物語のシーンを描画する関数
+        function renderScene(sceneId) {
+            currentSceneId = sceneId;
+            currentTextIndex = 0;
+            const scene = storyData[sceneId];
+            if (!scene) {
+                console.error(`シーンID "${sceneId}" が見つかりません。`);
+                return;
+            }
+
+            const playerName = localStorage.getItem('playerName') || 'あなた';
+            const friendName = 'ゆうた';
+
+            let titleText = scene.title.replaceAll('{{playerName}}', playerName).replaceAll('{{friendName}}', friendName);
+            storyTitleElement.textContent = titleText;
+
+            choicesContainer.innerHTML = ''; // 選択肢を非表示
+            storyContinueIcon.style.display = 'none';
+
+            showStoryText();
+        }
+        
+        // 物語のテキストを表示する関数
+        function showStoryText() {
+            const scene = storyData[currentSceneId];
+            if (currentTextIndex < scene.text.length) {
+                const playerName = localStorage.getItem('playerName') || 'あなた';
+                const friendName = 'ゆうた';
+                let textToShow = scene.text[currentTextIndex].replaceAll('{{playerName}}', playerName).replaceAll('{{friendName}}', friendName);
+                
+                storyContinueIcon.style.display = 'none';
+                typeWriter(storyTextElement, textToShow, () => {
+                    storyContinueIcon.style.display = 'block';
+                });
+            } else {
+                // 全てのテキストが終わったら選択肢を表示
+                storyContinueIcon.style.display = 'none';
+                displayChoices();
+            }
+        }
+        
+        // 選択肢を表示する関数
+        function displayChoices() {
+            const scene = storyData[currentSceneId];
+            const playerName = localStorage.getItem('playerName') || 'あなた';
+            const friendName = 'ゆうた';
+
+            if (scene.choices && scene.choices.length > 0) {
+                scene.choices.forEach(choice => {
+                    const button = document.createElement('button');
+                    let choiceText = choice.text.replaceAll('{{playerName}}', playerName).replaceAll('{{friendName}}', friendName);
+                    button.textContent = choiceText;
+                    button.className = "w-full bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300 text-left";
+                    button.onclick = () => handleChoice(currentSceneId, choice.text, choice.nextScene);
+                    choicesContainer.appendChild(button);
+                });
+                restartButton.style.display = 'none';
+            } else {
+                restartButton.style.display = 'inline-block';
+            }
+            localStorage.setItem('branchingStorySceneId', currentSceneId);
+        }
+
+        // 選択肢が選ばれたときの処理
+        async function handleChoice(sceneId, choiceText, nextSceneId) {
+            if (db) {
+                try {
+                    await addDoc(collection(db, "choices"), {
+                        userId: userId,
+                        playerName: localStorage.getItem('playerName') || '（未設定）',
+                        sceneId: sceneId,
+                        choiceText: choiceText,
+                        nextSceneId: nextSceneId,
+                        timestamp: serverTimestamp(),
+                        userAgent: navigator.userAgent
+                    });
+                    console.log("Choice saved to Firestore.");
+                } catch (error) {
+                    console.error("Firestoreへの書き込みに失敗しました: ", error);
+                }
+            }
+            renderScene(nextSceneId);
+        }
+        
+        // CSVエクスポート処理
+        async function exportToCSV() {
+            if (!db) { alert("データベースに接続されていません。"); return; }
+            alert("データをエクスポートします。");
+            
+            try {
+                const querySnapshot = await getDocs(collection(db, "choices"));
+                let csvContent = "data:text/csv;charset=utf-8,";
+                const headers = ["UserID", "PlayerName", "SceneID", "ChoiceText", "NextSceneID", "Timestamp"];
+                csvContent += headers.join(",") + "\r\n";
+
+                querySnapshot.forEach(doc => {
+                    const data = doc.data();
+                    const timestamp = data.timestamp ? new Date(data.timestamp.seconds * 1000).toLocaleString('ja-JP') : "N/A";
+                    const row = [`"${data.userId}"`, `"${data.playerName || ''}"`, `"${data.sceneId}"`, `"${data.choiceText}"`, `"${data.nextSceneId}"`, `"${timestamp}"`];
+                    csvContent += row.join(",") + "\r\n";
+                });
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", "choices_export.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } catch(error) {
+                console.error("CSVのエクスポート中にエラーが発生しました: ", error);
+                alert("データのエクスポートに失敗しました。");
+            }
+        }
+
+        // イベントリスナーの設定
+        initialPrompt.addEventListener('click', () => {
+            if (narratorTextIndex < narratorLines.length) {
+                narratorTextIndex++;
+                showNarratorText();
+            }
+        });
+
+        storyContainer.addEventListener('click', () => {
+             const scene = storyData[currentSceneId];
+             if(currentTextIndex < scene.text.length - 1) {
+                 currentTextIndex++;
+                 showStoryText();
+             } else if (currentTextIndex === scene.text.length -1) {
+                 currentTextIndex++; // インデックスを進めて次のクリックで選択肢が出るようにする
+                 storyContinueIcon.style.display = 'none';
+                 displayChoices();
+             }
+        });
+
+        submitNameButton.addEventListener('click', () => {
+            const playerName = playerNameInput.value.trim() || 'あなた';
+            localStorage.setItem('playerName', playerName);
+            confirmationText.textContent = `「${playerName}」様、でございますね。確かに承りました。\nでは、物語の準備はすべて整いました。\nどうぞ、心ゆくまでお楽しみくださいませ。いってらっしゃいませ、${playerName}様。`;
+            nameInputSection.style.display = 'none';
+            confirmationPrompt.style.display = 'block';
+        });
+
+        startButton.addEventListener('click', () => {
+            characterContainer.style.display = 'none'; // 物語開始時にキャラクターを非表示
+            setupContainer.style.display = 'none';
+            mainContainer.style.display = 'block';
+            renderScene('1');
+        });
+
+        restartButton.addEventListener('click', () => {
+            characterContainer.style.display = 'block'; // やり直し時にキャラクターを再表示
+            mainContainer.style.display = 'none';
+            setupContainer.style.display = 'block';
+            initialPrompt.style.display = 'block';
+            confirmationPrompt.style.display = 'none';
+            nameInputSection.style.display = 'none';
+            narratorTextIndex = 0;
+            localStorage.removeItem('branchingStorySceneId');
+            showNarratorText();
+        });
+
+        exportCsvButton.addEventListener('click', exportToCSV);
+
+        // 初期表示
+        playerNameInput.value = localStorage.getItem('playerName') || '';
+        showNarratorText();
+
+    </script>
+ </body>
+ </html>
